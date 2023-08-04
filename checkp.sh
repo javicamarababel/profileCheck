@@ -1,6 +1,9 @@
 #!/bin/bash
+# Original en https://github.com/javicamarababel/profileCheck
+OpcSoloDuplicados=
+
 function usage {
-  echo "Uso: checkp.sh -d <dir wM> ( -f <fichero bundles.info> | -p <nombre profile> )"
+  echo "Uso: checkp.sh -d <dir wM> ( -f <fichero bundles.info> | -p <nombre profile> ) [ --soloBundlesDuplicados ]"
   echo "-d <dir wM> es obligatorio solo si se pone -p"
   echo "Si se pone -d <dir wM> se comprobara que los jar existen y que no existe otra version superior"
   echo "Aparte de esta utilidad, puede ser util ejecutar la Diagnostic Tool con:"
@@ -31,6 +34,9 @@ while [[ "$1" =~ ^- ]]; do
   elif [ "$1" == "-p" ]; then
     shift
     nombreProfile=$1
+  elif [ "$1" == --soloBundlesDuplicados ]; then
+    OpcSoloDuplicados=$1
+    shift
   else
     usage
     exit 1
@@ -68,7 +74,9 @@ if [ ! -r "$ficheroBundlesInfo" ]; then
   exit 1
 fi
 
-log "--Revision de $ficheroBundlesInfo :"
+if [ -z "$OpcSoloDuplicados" ]; then
+  log "--Revision de $ficheroBundlesInfo :"
+fi
 
 # Bundles duplicados
 tmpbundlesdup=`mktemp /tmp/tmpbundlesdupXXXXXX.lst`
@@ -85,65 +93,67 @@ else
 fi
 rm $tmpbundlesdup
 
-# Bundles que no existen
-if [ ! -z "$dirwM" ]; then
-  bundlenoex=false
-  grep -v "^#" "$ficheroBundlesInfo" | while IFS= read -r bundleLine ; do
-    if [[ "$bundleLine" =~ ^([^,]+),([^,]+),([^,]+) ]]; then
-      name=${BASH_REMATCH[1]}
-      version=${BASH_REMATCH[2]}
-      jarfile=${BASH_REMATCH[3]}
-      if [[ "$jarfile" =~ ^\.\./\.\./(.*)$ ]]; then
-        jarfile="$dirwM/${BASH_REMATCH[1]}"
-      fi
-      if [ ! -f "$jarfile" ]; then
-        if [ $bundlenoex == false ]; then
-          log "Bundles que no existen:"
-          bundlenoex=true
+if [ -z "$OpcSoloDuplicados" ]; then
+  # Bundles que no existen
+  if [ ! -z "$dirwM" ]; then
+    bundlenoex=false
+    grep -v "^#" "$ficheroBundlesInfo" | while IFS= read -r bundleLine ; do
+      if [[ "$bundleLine" =~ ^([^,]+),([^,]+),([^,]+) ]]; then
+        name=${BASH_REMATCH[1]}
+        version=${BASH_REMATCH[2]}
+        jarfile=${BASH_REMATCH[3]}
+        if [[ "$jarfile" =~ ^\.\./\.\./(.*)$ ]]; then
+          jarfile="$dirwM/${BASH_REMATCH[1]}"
         fi
-        log "El fichero jar $jarfile no existe (bundle $name, version $version)"
-      fi
-    fi
-  done
-  if [ $bundlenoex == false ]; then
-    log "No hay bundles que no existan"
-  fi
-
-  # Bundles con version superior disponible
-  bundlesvsupfile=`mktemp /tmp/bundlesvsupXXXXX`
-  if [ -f "$bundlesvsupfile" ]; then
-    rm "$bundlesvsupfile"
-  fi
-  grep -v "^#" "$ficheroBundlesInfo" | while IFS= read -r bundleLine ; do
-    if [[ "$bundleLine" =~ ^([^,]+),([^,]+),([^,]+) ]]; then
-      name=${BASH_REMATCH[1]}
-      version=${BASH_REMATCH[2]}
-      jarfile=${BASH_REMATCH[3]}
-      if [[ "$jarfile" =~ ^\.\./\.\./(.*)$ ]]; then
-        jarfile="$dirwM/${BASH_REMATCH[1]}"
-      fi
-      if [[ "$jarfile" =~ ^(.+)_${version}.*$ ]]; then
-        jarfilepr=${BASH_REMATCH[1]}
-        ultjarfile=`ls -1 ${jarfilepr}_*.jar |tail -1`
-        if [ "$ultjarfile" != "$jarfile" ]; then
-          if [ ! -f $bundlesvsupfile ]; then
-            log "Bundles de los que parece existir una version superior:"
-  	    touch $bundlesvsupfile
+        if [ ! -f "$jarfile" ]; then
+          if [ $bundlenoex == false ]; then
+            log "Bundles que no existen:"
+            bundlenoex=true
           fi
-          vsup=""
-          if [[ "$ultjarfile" =~ ${name}_(.+).jar$ ]]; then
-            vsup=${BASH_REMATCH[1]}
-          fi
-          log "Del bundle $name se usa la version $version , pero parece existir otra mayor $vsup:"
-  	  echo $bundleLine
-          echo "$ultjarfile"
+          log "El fichero jar $jarfile no existe (bundle $name, version $version)"
         fi
       fi
+    done
+    if [ $bundlenoex == false ]; then
+      log "No hay bundles que no existan"
     fi
-  done
-  if [ ! -f $bundlesvsupfile ]; then
-    log "No veo bundles para los que parezca existir una version superior"
-  else
-    rm $bundlesvsupfile
+  
+    # Bundles con version superior disponible
+    bundlesvsupfile=`mktemp /tmp/bundlesvsupXXXXX`
+    if [ -f "$bundlesvsupfile" ]; then
+      rm "$bundlesvsupfile"
+    fi
+    grep -v "^#" "$ficheroBundlesInfo" | while IFS= read -r bundleLine ; do
+      if [[ "$bundleLine" =~ ^([^,]+),([^,]+),([^,]+) ]]; then
+        name=${BASH_REMATCH[1]}
+        version=${BASH_REMATCH[2]}
+        jarfile=${BASH_REMATCH[3]}
+        if [[ "$jarfile" =~ ^\.\./\.\./(.*)$ ]]; then
+          jarfile="$dirwM/${BASH_REMATCH[1]}"
+        fi
+        if [[ "$jarfile" =~ ^(.+)_${version}.*$ ]]; then
+          jarfilepr=${BASH_REMATCH[1]}
+          ultjarfile=`ls -1 ${jarfilepr}_*.jar |tail -1`
+          if [ "$ultjarfile" != "$jarfile" ]; then
+            if [ ! -f $bundlesvsupfile ]; then
+              log "Bundles de los que parece existir una version superior:"
+    	    touch $bundlesvsupfile
+            fi
+            vsup=""
+            if [[ "$ultjarfile" =~ ${name}_(.+).jar$ ]]; then
+              vsup=${BASH_REMATCH[1]}
+            fi
+            log "Del bundle $name se usa la version $version , pero parece existir otra mayor $vsup:"
+    	  echo $bundleLine
+            echo "$ultjarfile"
+          fi
+        fi
+      fi
+    done
+    if [ ! -f $bundlesvsupfile ]; then
+      log "No veo bundles para los que parezca existir una version superior"
+    else
+      rm $bundlesvsupfile
+    fi
   fi
 fi
